@@ -23,7 +23,7 @@
   "require": {
     "ext-mosquitto": "*",
     "php": "~7.1",
-    "symfony/messenger": "~4.3"
+    "symfony/messenger": "~4.3|^5.0"
   },
   "require-dev": {
     "ext-intl": "*"
