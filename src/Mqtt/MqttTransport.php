@@ -9,47 +9,33 @@ use Symfony\Component\Serializer\SerializerInterface;
 
 class MqttTransport implements TransportInterface
 {
-    private $credentials;
+    private \Mosquitto\Client $client;
+    private array $credentials;
+    private bool $connected;
+    private string $caCert;
 
-    /** @var \Mosquitto\Client */
-    private $client;
-
-    /** @var bool */
-    private $connected;
-
-    /** @var bool */
-    private $shouldStop;
-
-    /** @var array */
-    private $topics;
-
-    public function __construct(array $credentials, array $topics)
+    public function __construct(string $caCert, array $credentials)
     {
         $this->credentials = $credentials;
+        $this->caCert = $caCert;
         $this->connected = false;
-        $this->topics = $topics;
     }
 
     public function send(Envelope $envelope): Envelope
     {
-        if($envelope->getMessage() instanceof MqttMessageInterface) {
-            $this->connect();
-            $this->client->publish($envelope->getMessage()->getTopic(), $envelope->getMessage()->getBody(), $envelope->getMessage()->getQos());
-            $this->client->loop();
+        $message = $envelope->getMessage();
+        if($message instanceof MqttMessageInterface) {
+            $this->connect($message->getUsername(), $message->getPassword());
+            $this->client->publish($message->getTopic(), $message->getBody(), $message->getQos());
+            $this->client->loopForever();
         }
+
         return $envelope;
     }
 
     public function get(): iterable
     {
-        foreach ($this->connection->getQueueNames() as $queueName) {
-            yield from $this->getEnvelope($queueName);
-        }
-        $this->client->onMessage(function($message) use ($handler) {
-            yield from new MqttMessage($message->topic,$message->qos,$message->payload,$message->mid);
-        });
-        $this->subscribe();
-        $this->client->loopForever();
+        throw new \InvalidArgumentException('Not implemented. Please use triggers instead');
     }
 
     public function ack(Envelope $envelope): void
@@ -58,7 +44,6 @@ class MqttTransport implements TransportInterface
 
     public function reject(Envelope $envelope): void
     {
-
     }
 
     public function stop(): void
@@ -66,6 +51,7 @@ class MqttTransport implements TransportInterface
         $this->client->exitLoop();
         if(isset($this->client)) {
             $this->client->disconnect();
+            unset($this->client);
         }
     }
 
@@ -74,32 +60,34 @@ class MqttTransport implements TransportInterface
      *
      * @return \Mosquitto\Client
      */
-    private function createClient(): \Mosquitto\Client
+    private function createClient(string $username, string $password): \Mosquitto\Client
     {
         $client = new \Mosquitto\Client($this->credentials['client_id'],false);
-        $client->setCredentials($this->credentials['login'], $this->credentials['password']);
+        $client->setTlsCertificates($this->caCert);
+        $client->setCredentials($username, $password);
+
         $client->onDisconnect(function(){
+            $this->connected = false;
+        });
+
+        // We need to close connection to complete publishing
+        $client->onPublish(function(){
+            $this->stop();
             $this->connected = false;
         });
 
         return $client;
     }
 
-    private function connect() {
+    private function connect(string $username, string $password): void
+    {
         if(!isset($this->client)) {
-            $this->client = $this->createClient();
+            $this->client = $this->createClient($username, $password);
         }
-        if($this->connected == false) {
+
+        if(false === $this->connected) {
             $this->client->connect($this->credentials['host'],$this->credentials['port']);
             $this->connected = true;
-        }
-    }
-
-    private function subscribe() {
-
-        $this->connect();
-        foreach ($this->topics as $topic) {
-            $this->client->subscribe($topic, 0);
         }
     }
 }
