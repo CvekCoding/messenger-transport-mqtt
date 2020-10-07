@@ -2,6 +2,7 @@
 
 namespace VSPoint\Messenger\Transport\Mqtt;
 
+use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 use Symfony\Component\Messenger\Transport\TransportFactoryInterface;
 use Symfony\Component\Messenger\Transport\TransportInterface;
 
@@ -16,13 +17,13 @@ class MqttTransportFactory implements TransportFactoryInterface
         $this->caCert = $caCert;
     }
 
-    public function createTransport(string $dsn, array $options): TransportInterface
+    public function createTransport(string $dsn, array $options, SerializerInterface $serializer): TransportInterface
     {
         if (false === $parsedUrl = parse_url($dsn)) {
             throw new \InvalidArgumentException(sprintf('The given AMQP DSN "%s" is invalid.', $dsn));
         }
 
-        $pathParts = isset($parsedUrl['path']) ? explode('/', trim($parsedUrl['path'], '/')) : [];
+        $pathParts = isset($parsedUrl['path']) ? explode('/', \trim($parsedUrl['path'], '/')) : [];
 
         $credentials = \array_replace_recursive([
             'host'      => $parsedUrl['host'] ?? 'localhost',
