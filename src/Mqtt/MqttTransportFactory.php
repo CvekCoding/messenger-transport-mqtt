@@ -10,11 +10,13 @@ class MqttTransportFactory implements TransportFactoryInterface
 {
     private ?string $clientId;
     private string $caCert;
+    private array $topics;
 
-    public function __construct(string $caCert, ?string $clientId = null)
+    public function __construct(string $caCert, ?string $clientId = null, array $topics = [])
     {
         $this->clientId = $clientId;
         $this->caCert = $caCert;
+        $this->topics = $topics;
     }
 
     public function createTransport(string $dsn, array $options, SerializerInterface $serializer): TransportInterface
@@ -40,7 +42,7 @@ class MqttTransportFactory implements TransportFactoryInterface
             $credentials['password'] = $parsedUrl['pass'];
         }
 
-        return new MqttTransport($this->caCert, $credentials);
+        return new MqttTransport($this->caCert, $credentials, $this->topics);
     }
 
     public function supports(string $dsn, array $options): bool
