@@ -4,9 +4,7 @@ namespace VSPoint\Messenger\Transport\Mqtt;
 
 use Mosquitto\Client;
 use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
 use Symfony\Component\Messenger\Transport\TransportInterface;
-use Symfony\Component\Serializer\SerializerInterface;
 
 class MqttTransport implements TransportInterface
 {
@@ -14,8 +12,8 @@ class MqttTransport implements TransportInterface
     private array $credentials;
     private bool $connected;
     private string $caCert;
-    private bool $shouldStop;
     private array $topics;
+    private ?MqttMessage $message = null;
 
     public function __construct(string $caCert, array $credentials, array $topics)
     {
@@ -39,14 +37,17 @@ class MqttTransport implements TransportInterface
 
     public function get(): iterable
     {
-        foreach ($this->connection->getQueueNames() as $queueName) {
-            yield from $this->getEnvelope($queueName);
-        }
-        $this->client->onMessage(function($message) use ($handler) {
-            yield from new MqttMessage($message->topic,$message->qos,$message->payload,$message->mid);
-        });
-        $this->subscribe();
+        $this->subscribe($this->credentials['login'], $this->credentials['password']);
         $this->client->loopForever();
+
+        if (isset($this->message)) {
+            $envelope = new Envelope($this->message);
+            $this->message = null;
+
+            return [$envelope];
+        }
+
+        return [];
     }
 
     public function ack(Envelope $envelope): void
@@ -57,34 +58,33 @@ class MqttTransport implements TransportInterface
     {
     }
 
-    public function stop(): void
-    {
-        $this->client->exitLoop();
-        if(isset($this->client)) {
-            $this->client->disconnect();
-            unset($this->client);
-        }
-    }
-
     /**
      * Creates new instance of a MQTT client
      *
-     * @return Client
+     * @return \Mosquitto\Client
      */
-    private function createClient(string $username, string $password): Client
+    private function createClient(string $username, string $password): \Mosquitto\Client
     {
         $client = new Client($this->credentials['client_id'],false);
         $client->setTlsCertificates($this->caCert);
         $client->setCredentials($username, $password);
 
-        $client->onDisconnect(function(){
+        $client->onDisconnect(function() {
             $this->connected = false;
         });
 
+        $client->onConnect(function() {
+            $this->connected = true;
+        });
+
         // We need to close connection to complete publishing
-        $client->onPublish(function(){
-            $this->stop();
-            $this->connected = false;
+        $client->onPublish(function() use ($client) {
+            $client->exitLoop();
+        });
+
+        $client->onMessage(function($message) use ($client) {
+            $client->exitLoop();
+            $this->message = new MqttMessage($message->topic,$message->qos,$message->payload,$message->mid);
         });
 
         return $client;
@@ -98,15 +98,18 @@ class MqttTransport implements TransportInterface
 
         if(false === $this->connected) {
             $this->client->connect($this->credentials['host'],$this->credentials['port']);
-            $this->connected = true;
         }
     }
 
-    private function subscribe(string $username, string $password) {
+    private function subscribe(string $username, string $password): void
+    {
+        if ($this->connected) {
+            return;
+        }
 
         $this->connect($username, $password);
         foreach ($this->topics as $topic) {
-            $this->client->subscribe($topic, 0);
+            $this->client->subscribe($topic, 1);
         }
     }
 }
