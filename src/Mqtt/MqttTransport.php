@@ -3,16 +3,17 @@
 namespace VSPoint\Messenger\Transport\Mqtt;
 
 use Mosquitto\Client;
+use Mosquitto\Exception;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\TransportInterface;
 
 class MqttTransport implements TransportInterface
 {
-    private Client $client;
     private array $credentials;
-    private bool $connected;
     private string $caCert;
     private array $topics;
+    private ?Client $client = null;
+    private bool $connected = false;
     private ?MqttMessage $message = null;
 
     public function __construct(string $caCert, array $credentials, array $topics)
@@ -28,6 +29,12 @@ class MqttTransport implements TransportInterface
         $message = $envelope->getMessage();
         if($message instanceof MqttMessageInterface) {
             $this->connect($message->getUsername(), $message->getPassword());
+            try {
+                $this->client->loop(); // to check the client connection
+            } catch (Exception $e) { // if client was unexpectedly disconnected, reconnect it
+                $this->connect($message->getUsername(), $message->getPassword());
+            }
+
             $this->client->publish($message->getTopic(), $message->getBody(), $message->getQos());
             $this->client->loopForever();
         }
