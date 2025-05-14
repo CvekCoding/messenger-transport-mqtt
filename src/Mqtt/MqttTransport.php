@@ -78,6 +78,7 @@ class MqttTransport implements TransportInterface
 
         $client->onDisconnect(function() {
             $this->connected = false;
+            $this->client = null;
         });
 
         $client->onConnect(function() {
