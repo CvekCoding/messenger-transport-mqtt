@@ -80,6 +80,7 @@ class MqttTransport implements TransportInterface
         $client->setCredentials($this->credentials['login'], $this->credentials['password']);
         $client->onDisconnect(function(){
             $this->connected = false;
+            $this->client = null;
         });
 
         return $client;
